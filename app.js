@@ -190,7 +190,9 @@ const save = () => {
     const t = $("#toast");
     t.textContent = m;
     t.style.display = "block";
-    setTimeout(() => (t.style.display = "none"), 3200);
+    // Restart the timer so a new message isn't hidden early by an old one.
+    clearTimeout(toast.timer);
+    toast.timer = setTimeout(() => (t.style.display = "none"), 3200);
   };
 // STEP 4 - SMALL RULES: how to total a load's costs, and how to decide a load's
 // status (done / upcoming / needs info). Change these to change the app's logic.
@@ -472,7 +474,10 @@ function commit(done) {
   ui.del = 0;
   save();
   render();
-  toast(done ? "Saved as done ✔" : "Saved ✔");
+  // A load only counts as finished once it has miles (see st() in STEP 4).
+  toast(
+    !done ? "Saved ✔" : o.miles > 0 ? "Saved as done ✔" : "Saved — add the miles to finish it",
+  );
 }
 const dOk = (d) => (/^\d{4}-\d\d-\d\d$/.test(d || "") ? d : today),
   tOk = (t) =>
@@ -683,7 +688,9 @@ const A = {
   async csv() {
     const q = (s) => '"' + String(s ?? "").replace(/"/g, '""') + '"',
       H =
-        "type,date,time,client,container,pickup,from,to,category,paid,miles,fuel,tolls,other,amount,status",
+        "type,date,time,client,container,pickup,from,to,category,paid,miles,fuel,tolls,other,amount,status,note",
+      // Same status words the app shows on screen.
+      SW = { done: "done", up: "upcoming", need: "needs info" },
       r = [
         ...S.L.map((x) => [
           "load",
@@ -701,7 +708,8 @@ const A = {
           x.tolls || 0,
           x.other,
           "",
-          x.status,
+          SW[st(x)],
+          "",
         ]),
         ...S.E.map((x) => [
           "expense",
@@ -720,6 +728,7 @@ const A = {
           "",
           x.amt,
           "",
+          x.note,
         ]),
       ]
         .sort((a, b) => a[1].localeCompare(b[1]))
