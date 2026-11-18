@@ -10,7 +10,7 @@ and an "On the Road" / "Office" mode. Built with plain HTML, CSS, and JavaScript
    folder and visit http://localhost:8000.
 
 ## Live link
-https://YOUR-USERNAME.github.io/cano-trucking/  (replace after you turn on GitHub Pages)
+https://jcano2203.github.io/cano-trucking/
 
 ## Files
 - `index.html`: the page shell
