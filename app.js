@@ -166,6 +166,10 @@ let ui = {
   del: 0,
   rev: null,
   busy: 0,
+  fin: null, // id of the load in the short Finish form
+  menu: 0, // 1 while the ＋ Add menu is open
+  det: 0, // 1 while Overview "See details" is open
+  clr: 0,
 };
 try {
   ui.mode = localStorage.getItem(K + "m") || "road";
@@ -205,35 +209,44 @@ const cost = (x) => (+x.fuel || 0) + (+x.tolls || 0) + (+x.other || 0),
       : x.date < today
         ? "need"
         : "up",
-  LB = { done: "✔ DONE", up: "📅 UPCOMING", need: "⚠ NEEDS INFO" },
-  chip = (s) => `<span class="chip ${s}">${LB[s]}</span>`;
+  // Tags are only shown for the two states the owner must notice.
+  LB = { done: "✔ Done", need: "⚠ Needs info" },
+  chip = (s) => (LB[s] ? `<span class="chip ${s}">${LB[s]}</span>` : "");
 const money = (x) => {
   const d = x.status === "done";
   return `<div class="mn"><span class="t-in">Earned ${$$(x.pay)}</span>${d ? `<span class="t-mi">${x.miles || 0} miles</span><span class="t-out">Spent ${$$(cost(x))}</span>` : ""}</div>`;
 };
+const byTime = (a, b) =>
+  (a.date + (a.due || "")).localeCompare(b.date + (b.due || ""));
 // STEP 5 - SCREENS: each function below returns a string of HTML for one screen.
 // The app never edits the page piece by piece; it rebuilds the whole screen from
 // the data every time something changes (see render()).
-const scanBtn = () =>
-  SM
-    ? '<button class="b soft" data-a="scan">📷 Scan a document — Claude fills it in</button>'
-    : "";
+// --- BIG CARD: used only for TODAY's loads. Tap the card to open it.
 const card = (x) => {
   const s = st(x);
-  return `<div class="ld ${s}"><div class="hd"><span class="tm">${x.due ? tm(x.due) : "Any time"}</span>${chip(s)}</div><div class="cl">${esc(x.client) || "No client"}</div><div class="rt"><span><small>FROM</small>${esc(x.from) || "—"}</span><b>→</b><span><small>TO</small>${esc(x.to) || "—"}</span></div><div class="ids"><span><small>CONTAINER</small>${esc(x.container) || "—"}</span><span><small>PICKUP #</small>${esc(x.pickup) || "—"}</span></div>${money(x)}${s === "done" ? "" : `<button class="b in" data-a="fin" data-id="${x.id}">✔ Finish this load</button>`}<button class="b" data-a="edit" data-id="${x.id}">✏ Change details</button></div>`;
+  return `<div class="ld ${s}" data-a="edit" data-id="${x.id}" role="button" tabindex="0"><div class="hd"><span class="tm">${x.due ? tm(x.due) : "Any time"}</span>${chip(s)}</div><div class="cl">${esc(x.client) || "No client"}</div><div class="rt"><span><small>FROM</small>${esc(x.from) || "—"}</span><b>→</b><span><small>TO</small>${esc(x.to) || "—"}</span></div><div class="ids"><span><small>CONTAINER</small>${esc(x.container) || "—"}</span><span><small>PICKUP #</small>${esc(x.pickup) || "—"}</span></div>${money(x)}${s === "done" ? "" : `<button class="b in" data-a="fin" data-id="${x.id}">✔ Finish this load</button>`}</div>`;
 };
-// --- ON THE ROAD screen: today, next 7 days, and anything that needs info.
+// --- ONE-ROW SUMMARY: used everywhere else (needs info, next 7 days, Coming up,
+// Records). "when" is the date or time to show; "act" is what a tap does.
+const row = (x, when, act = "edit") => {
+  const s = st(x);
+  return `<button class="row ${s === "need" ? "need" : ""}" data-a="${act}" data-id="${x.id}"><span class="rl"><b>${when} · ${esc(x.client) || "No client"}</b><span class="rs">${s === "need" ? '<span class="t-nd">⚠ Needs info</span> · ' : ""}${x.scan ? "📷 " : ""}${esc(x.from) || "—"} → ${esc(x.to) || "—"}</span></span><span class="rr t-in">${$$(x.pay)}<small>earned</small></span></button>`;
+};
+const rowX = (x) =>
+  `<button class="row" data-a="editx" data-id="${x.id}"><span class="rl"><b>${fd(x.date)} · ${esc(x.cat)}</b><span class="rs">${x.scan ? "📷 " : ""}${esc(x.note) || "—"}</span></span><span class="rr t-out">${$$(x.amt)}<small>spent</small></span></button>`;
+const when = (x) => fd(x.date) + (x.due ? " · " + tm(x.due) : "");
+// --- ON THE ROAD screen: today (big cards), then needs info and next 7 days as rows.
 function road() {
-  const L = [...S.L].sort((a, b) =>
-      (a.date + (a.due || "")).localeCompare(b.date + (b.due || "")),
-    ),
+  const L = [...S.L].sort(byTime),
     td = L.filter((x) => x.date === today),
-    nx = L.filter((x) => x.date > today && x.date <= add(7)),
-    nd = L.filter((x) => st(x) === "need");
-  return `${nd.length ? `<div class="alert">⚠ ${nd.length} load${nd.length > 1 ? "s" : ""} need info — scroll down</div>` : ""}${scanBtn()}<div class="band up">📅 TODAY — ${fd(today)}</div>${td.map(card).join("") || '<div class="empty">No loads today. 🎉</div>'}
-<button class="b up" data-a="new">＋ Add a load</button><button class="b ghost" data-a="newx">＋ Add an expense (fuel, tolls, repairs…)</button>
-<div class="band mi">COMING UP — next 7 days</div>${nx.map((x) => `<div style="font-weight:800;margin:6px 0">${fd(x.date)}</div>${card(x)}`).join("") || '<div class="empty">Nothing scheduled yet.</div>'}
-${nd.length ? `<div class="band need">⚠ NEEDS INFO</div>${nd.map(card).join("")}` : ""}`;
+    // A load that is today is already shown above, so it is never listed twice.
+    nd = L.filter((x) => st(x) === "need" && x.date !== today),
+    nx = L.filter(
+      (x) => x.date > today && x.date <= add(7) && st(x) !== "need",
+    );
+  return `<div class="band up">📅 Today · ${fd(today)}</div>${td.map(card).join("") || '<div class="empty">No loads today. 🎉</div>'}
+${nd.length ? `<div class="band need">⚠ Needs your info</div>${nd.map((x) => row(x, fd(x.date), "fin")).join("")}` : ""}
+<div class="band up">📅 Next 7 days</div>${nx.map((x) => row(x, when(x))).join("") || '<div class="empty">Nothing scheduled yet.</div>'}`;
 }
 // --- Date ranges for the Office overview buttons (this month, last year, ...).
 function rng() {
@@ -329,44 +342,37 @@ function overview() {
       .join("") +
     "</svg>";
   const sm = (l, v) =>
-    `<div class="k out s"><small style="color:inherit">${l}</small><div class="v">${$$(v)}</div></div>`;
-  return `<div class="seg" style="margin-top:12px">${[
+    `<div class="li"><span>${l}</span><b class="t-out">${$$(v)}</b></div>`;
+  const PER = [
     ["month", "This month"],
     ["last", "Last month"],
     ["year", "This year"],
     ["ly", "Last year"],
     ["all", "All time"],
-  ]
-    .map(
-      ([k, l]) =>
-        `<button class="${ui.per === k ? "on" : ""}" data-a="per" data-id="${k}">${l}</button>`,
-    )
-    .join("")}</div>
-<div class="kp"><div class="k in"><small style="color:inherit">💰 MONEY EARNED</small><div class="v">${$$(I)}</div></div><div class="k out"><small style="color:inherit">⛽ MONEY SPENT</small><div class="v">${$$(O)}</div></div><div class="k pf"><small>PROFIT (kept)</small><div class="v ${P >= 0 ? "t-in" : "t-out"}">${$$(P)}</div><small>${mi ? "$" + (P / mi).toFixed(2) + " per mile" : ""}</small></div><div class="k mi"><small style="color:inherit">🛣 MILES DRIVEN</small><div class="v">${mi.toLocaleString()}</div></div></div>
-<div class="band out">Where the money went</div><div class="kp">${sm("⛽ FUEL", fu)}${sm("🛣 TOLLS", to)}${sm("🔧 REPAIRS &amp; OTHER", ot)}</div>
-<div class="card"><h2 style="font-size:18px">Last 6 months</h2>${chart}<div class="key"><span class="chip in">■ Earned</span><span class="chip out">■ Spent</span></div></div>
-<details class="card"><summary>🎨 What do the colors mean?</summary><div class="key"><span class="chip in">Green = money earned</span><span class="chip out">Red = money spent</span><span class="chip mi">Blue = miles</span><span class="chip up">Teal = coming up</span><span class="chip need">Orange = needs your info</span></div></details>`;
+  ];
+  // The extra numbers stay hidden until the owner taps "See details".
+  const det = ui.det
+    ? `<div class="card"><h3 class="t-out">⛽ Where the money went</h3>${sm("⛽ Fuel", fu)}${sm("🛣 Tolls", to)}${sm("🔧 Repairs &amp; other", ot)}</div>
+<div class="card"><h3>Last 6 months</h3>${chart}<div class="key"><span class="chip in">■ Earned</span><span class="chip out">■ Spent</span></div></div>
+<div class="card"><h3>🎨 What the colors mean</h3><div class="key"><span class="chip in">Green = money earned</span><span class="chip out">Red = money spent</span><span class="chip mi">Blue = miles</span><span class="chip up">Teal = coming up</span><span class="chip need">Orange = needs your info</span></div></div>`
+    : "";
+  return `<label class="per">Time period<select id="per">${PER.map(([k, l]) => `<option value="${k}" ${ui.per === k ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+<div class="card pf"><small>Profit (what you kept)</small><div class="big ${P >= 0 ? "t-in" : "t-out"}">${$$(P)}</div>${mi ? `<div class="pm">$${(P / mi).toFixed(2)} per mile</div>` : ""}<div class="trio"><div><small class="t-in">💰 Earned</small><b class="t-in">${$$(I)}</b></div><div><small class="t-out">⛽ Spent</small><b class="t-out">${$$(O)}</b></div><div><small class="t-mi">🛣 Miles</small><b class="t-mi">${mi.toLocaleString()}</b></div></div></div>
+<button class="b ghost" data-a="det">${ui.det ? "Hide details ▴" : "See details ▾"}</button>${det}`;
 }
-// --- RECORDS and COMING UP tabs: lists of loads and expenses.
-const rec = (x) => {
-  const s = st(x);
-  return `<div class="rec ${s}" data-a="edit" data-id="${x.id}"><div class="a"><b>${fd(x.date)} ${x.due ? "· " + tm(x.due) : ""}</b><span>${x.scan ? '<span class="chip mi">📷 scanned</span> ' : ""}${chip(s)}</span></div><div>${esc(x.client)} · ${esc(x.from)} → ${esc(x.to)}</div><div class="m"><span><small>CONTAINER</small>${esc(x.container) || "—"}</span><span><small>PICKUP #</small>${esc(x.pickup) || "—"}</span><span class="t-in">Earned ${$$(x.pay)}</span>${x.status === "done" ? `<span class="t-mi">${x.miles || 0} mi</span><span class="t-out">Spent ${$$(cost(x))}</span>` : ""}</div></div>`;
-};
-const recX = (x) =>
-  `<div class="rec ex" data-a="editx" data-id="${x.id}"><div class="a"><b>${fd(x.date)}</b><span class="chip out">${esc(x.cat)}</span></div><div>${esc(x.note) || "—"}</div><div class="m"><span class="t-out">Spent ${$$(x.amt)}</span>${x.scan ? '<span class="chip mi">📷 scanned</span>' : ""}</div></div>`;
+// --- RECORDS and COMING UP tabs: lists of loads and expenses (one row each).
 function coming() {
   const U = S.L.filter((x) => x.status === "up" && x.date >= today).sort(
-    (a, b) => (a.date + (a.due || "")).localeCompare(b.date + (b.due || "")),
+    byTime,
   );
-  let h =
-      scanBtn() + '<button class="b up" data-a="new">＋ Add a load</button>',
+  let h = "",
     last = "";
   U.forEach((x) => {
     if (x.date !== last) {
-      h += `<div class="band up">${x.date === today ? "TODAY — " : ""}${fd(x.date)}</div>`;
+      h += `<div class="band up">📅 ${x.date === today ? "Today · " : ""}${fd(x.date)}</div>`;
       last = x.date;
     }
-    h += rec(x);
+    h += row(x, x.due ? tm(x.due) : "Any time");
   });
   return h + (U.length ? "" : '<div class="empty">No upcoming loads.</div>');
 }
@@ -388,12 +394,13 @@ function records() {
           (x) =>
             !q || [x.cat, x.note, x.date].join(" ").toLowerCase().includes(q),
         ).sort((a, b) => b.date.localeCompare(a.date));
-  return `<div class="seg" style="margin-top:12px"><button class="${isL ? "on" : ""}" data-a="rv" data-id="L">🚚 Loads</button><button class="${isL ? "" : "on"}" data-a="rv" data-id="E">🧾 Expenses</button></div><div style="margin-top:10px"><input id="q" placeholder="🔍 Search…" value="${esc(ui.q)}"></div>${scanBtn()}${isL ? "" : '<button class="b ghost" data-a="newx">＋ Add an expense</button>'}
-<p style="color:var(--mut)">${R.length} record${R.length == 1 ? "" : "s"}</p>${
+  return `<div class="seg"><button class="${isL ? "on" : ""}" data-a="rv" data-id="L">🚚 Loads</button><button class="${isL ? "" : "on"}" data-a="rv" data-id="E">🧾 Expenses</button></div><input id="q" placeholder="🔍 Search…" value="${esc(ui.q)}" aria-label="Search records">
+<button class="b" data-a="csv">⬇ Save everything for my accountant (spreadsheet)</button>
+<p class="cnt">${R.length} record${R.length == 1 ? "" : "s"}</p>${
     R.slice(0, ui.n)
-      .map(isL ? rec : recX)
+      .map(isL ? (x) => row(x, fd(x.date)) : rowX)
       .join("") || '<div class="empty">Nothing found.</div>'
-  }${R.length > ui.n ? '<button class="b" data-a="more">Show more</button>' : ""}<button class="b" data-a="csv">⬇ Save everything for my accountant (spreadsheet)</button><button class="b out" data-a="clear">Delete sample data &amp; start fresh</button>`;
+  }${R.length > ui.n ? '<button class="b ghost" data-a="more">Show more</button>' : ""}<div class="quiet"><button class="link out" data-a="clear">${ui.clr ? "Tap again to delete everything" : "Delete sample data &amp; start fresh"}</button></div>`;
 }
 // --- FORMS: pop-up sheets for adding/editing a load or an expense.
 const f = (k, l, v, t = "text") =>
@@ -402,19 +409,38 @@ const f = (k, l, v, t = "text") =>
     `<label class="${c}">${l}<input data-f="${k}" type="number" inputmode="decimal" step="any" value="${v || ""}"></label>`;
 const catSel = (v) =>
   `<label>Type<select data-f="cat">${CATS.map((c) => `<option ${v === c ? "selected" : ""}>${c}</option>`).join("")}</select></label>`;
+// The 4 trip numbers, shared by the Finish form and the folded part of the load form.
+const tripNums = (x) =>
+  `${num("miles", "🛣 Miles driven", x.miles, "t-mi")}<div class="g2">${num("fuel", "⛽ Fuel ($)", x.fuel, "t-out")}${num("tolls", "🛣 Tolls ($)", x.tolls, "t-out")}</div>${num("other", "🔧 Repairs / other ($)", x.other, "t-out")}`;
+// Quiet text buttons under the main Save button: Cancel, and Delete when editing.
+const quiet = (delAct) =>
+  `<div class="quiet"><button class="link" data-a="close">Cancel</button>${delAct ? `<button class="link out" data-a="${delAct}">${ui.del ? "Tap again to delete for good" : "🗑 Delete"}</button>` : ""}</div>`;
+// --- LOAD FORM (add or change a load): job details first; trip numbers folded away.
 function form() {
   const n = ui.edit === "new",
     x = n ? { date: today } : S.L.find((y) => y.id == ui.edit);
   if (!x) return "";
-  return `<div class="sheet"><div class="sin"><h2>${n ? "Add a load" : "Load details"}</h2><div class="band up" style="margin-top:4px">1 · The job</div><div class="g2">${f("date", "Date", x.date, "date")}${f("due", "Pickup time", x.due, "time")}</div>${f("client", "Client", x.client)}${f("container", "Container ID", x.container)}${f("pickup", "Pickup number", x.pickup)}<div class="g2">${f("from", "From (yard)", x.from)}${f("to", "To (yard)", x.to)}</div>${num("pay", "💰 Pay for this load ($)", x.pay, "t-in")}
-<div class="band mi">2 · After the trip</div>${num("miles", "🛣 Miles driven", x.miles, "t-mi")}<div class="g2">${num("fuel", "⛽ Fuel ($)", x.fuel, "t-out")}${num("tolls", "🛣 Tolls ($)", x.tolls, "t-out")}</div>${num("other", "🔧 Repairs / other ($)", x.other, "t-out")}
-<button class="b in" data-a="done">✔ Save — this load is DONE</button><button class="b up" data-a="saveit">Save changes</button><button class="b" data-a="close">Cancel</button>${n ? "" : `<button class="b out" data-a="del">${ui.del ? "Tap again to delete for good" : "🗑 Delete this load"}</button>`}</div></div>`;
+  // Open the folded part when the load already has (or is missing) trip numbers.
+  const open = !n && (x.status === "done" || st(x) === "need");
+  return `<div class="sheet"><div class="sin"><h2>${n ? "Add a load" : "Load details"}</h2><div class="g2">${f("date", "Date", x.date, "date")}${f("due", "Pickup time", x.due, "time")}</div>${f("client", "Client", x.client)}${f("container", "Container ID", x.container)}${f("pickup", "Pickup number", x.pickup)}<div class="g2">${f("from", "From (yard)", x.from)}${f("to", "To (yard)", x.to)}</div>${num("pay", "💰 Pay for this load ($)", x.pay, "t-in")}
+<details class="fold" ${open ? "open" : ""}><summary>Trip already done? Add miles &amp; costs</summary>${tripNums(x)}</details>
+<button class="b dark" data-a="saveit">Save</button>${quiet(n ? "" : "del")}</div></div>`;
+}
+// --- FINISH FORM: only the 4 numbers needed after the trip.
+function formFin() {
+  const x = S.L.find((y) => y.id == ui.fin);
+  if (!x) return "";
+  return `<div class="sheet"><div class="sin"><h2>Finish this load</h2><p class="m">${fd(x.date)} · ${esc(x.client) || "No client"} · ${esc(x.from) || "—"} → ${esc(x.to) || "—"}</p>${tripNums(x)}<button class="b in" data-a="savefin">✔ Save, this load is done</button>${quiet()}</div></div>`;
 }
 function formX() {
   const n = ui.ex === "new",
     x = n ? { date: today, cat: "Fuel" } : S.E.find((y) => y.id == ui.ex);
   if (!x) return "";
-  return `<div class="sheet"><div class="sin"><h2>${n ? "Add an expense" : "Expense details"}</h2>${f("date", "Date", x.date, "date")}${catSel(x.cat)}${num("amt", "Amount ($)", x.amt, "t-out")}${f("note", "Note (where / what for)", x.note)}<button class="b in" data-a="savex">Save expense</button><button class="b" data-a="close">Cancel</button>${n ? "" : `<button class="b out" data-a="delx">${ui.del ? "Tap again to delete for good" : "🗑 Delete"}</button>`}</div></div>`;
+  return `<div class="sheet"><div class="sin"><h2>${n ? "Add an expense" : "Expense details"}</h2>${f("date", "Date", x.date, "date")}${catSel(x.cat)}${num("amt", "Amount ($)", x.amt, "t-out")}${f("note", "Note (where / what for)", x.note)}<button class="b dark" data-a="savex">Save expense</button>${quiet(n ? "" : "delx")}</div></div>`;
+}
+// --- ＋ ADD MENU: the one place to add anything. Scan only shows when it works.
+function menu() {
+  return `<div class="sheet low" data-a="close"><div class="menu"><button class="b ghost" data-a="new">🚚 A load</button><button class="b ghost" data-a="newx">🧾 An expense</button>${SM ? '<button class="b ghost" data-a="scan">📷 Scan a document</button>' : ""}${quiet()}</div></div>`;
 }
 // --- SCAN review sheet: shows what Claude read so YOU confirm before saving.
 function review() {
@@ -422,17 +448,19 @@ function review() {
   return `<div class="sheet"><div class="sin"><h2>📷 Here’s what Claude read</h2><div class="alert" style="margin-top:4px">⚠ Please check every number before saving. Claude can make mistakes.</div>
 ${r.L.map((x, i) => `<div class="sc" data-k="L"><b>Load ${i + 1}</b><div class="g2">${f("date", "Date", x.date, "date")}${f("due", "Pickup time", x.due, "time")}</div>${f("client", "Client", x.client)}${f("container", "Container ID", x.container)}${f("pickup", "Pickup number", x.pickup)}<div class="g2">${f("from", "From", x.from)}${f("to", "To", x.to)}</div>${num("pay", "💰 Pay ($)", x.pay, "t-in")}</div>`).join("")}
 ${r.E.map((x, i) => `<div class="sc" data-k="E"><b>Expense ${i + 1}</b>${f("date", "Date", x.date, "date")}${catSel(x.cat)}${num("amt", "Amount ($)", x.amt, "t-out")}${f("note", "Note", x.note)}</div>`).join("")}
-<button class="b in" data-a="addscan">✔ Looks right — add to my records</button><button class="b" data-a="close">Throw away</button></div></div>`;
+<button class="b in" data-a="addscan">✔ Looks right — add to my records</button><div class="quiet"><button class="link" data-a="close">Throw away</button></div></div></div>`;
 }
 function busy() {
-  return `<div class="sheet"><div class="sin" style="text-align:center"><h2>📷 Claude is reading your document…</h2><p class="m">This can take up to a minute.</p><button class="b" data-a="stop">Cancel</button></div></div>`;
+  return `<div class="sheet"><div class="sin" style="text-align:center"><h2>📷 Claude is reading your document…</h2><p class="m">This can take up to a minute.</p><div class="quiet"><button class="link" data-a="stop">Cancel</button></div></div></div>`;
 }
 // STEP 6 - RENDER: the heart of the app. Builds the header, the current screen,
 // and any open pop-up sheet, then puts it on the page.
 function render() {
   const r = ui.mode === "road";
   $("#app").innerHTML =
-    `<header><div class="brand"><span>🚛 Cano’s Trucking</span><button class="th" data-a="theme" aria-label="Switch between light and dark mode">${isDark() ? "☀️ Light" : "🌙 Dark"}</button></div><div class="modes"><button class="md ${r ? "on" : ""}" data-a="mode" data-id="road">🚛 On the Road</button><button class="md off ${r ? "" : "on"}" data-a="mode" data-id="office">🏢 Office</button></div></header>${r ? road() : office()}${ui.busy ? busy() : ui.rev ? review() : ui.ex ? formX() : ui.edit ? form() : ""}`;
+    `<header><div class="brand"><span>🚛 Cano’s Trucking</span><button class="th" data-a="theme" aria-label="${isDark() ? "Switch to light mode" : "Switch to dark mode"}" title="${isDark() ? "Light mode" : "Dark mode"}">${isDark() ? "☀️" : "🌙"}</button></div><div class="modes"><button class="md ${r ? "on" : ""}" data-a="mode" data-id="road">🚛 On the Road</button><button class="md off ${r ? "" : "on"}" data-a="mode" data-id="office">🏢 Office</button></div></header>${r ? road() : office()}<button class="fab" data-a="add">＋ Add</button>${ui.busy ? busy() : ui.rev ? review() : ui.menu ? menu() : ui.ex ? formX() : ui.fin ? formFin() : ui.edit ? form() : ""}`;
+  const p = $("#per");
+  if (p) p.onchange = (e) => A.per(e.target.value);
   if (ui.focus) {
     const e = document.querySelector(`[data-f="${ui.focus}"]`);
     if (e) setTimeout(() => e.focus(), 50);
@@ -457,27 +485,41 @@ const rd = (el) => {
   );
   return o;
 };
-function commit(done) {
+const nums = (o) =>
+  ["pay", "miles", "fuel", "tolls", "other"].forEach((k) => {
+    if (k in o) o[k] = +o[k] || 0;
+  });
+// The load form's one Save button. Rule: a load with miles, dated today or
+// earlier, is saved as DONE. Anything else keeps its status (new = upcoming).
+function commit() {
   const o = rd(document.querySelector(".sheet"));
-  ["pay", "miles", "fuel", "tolls", "other"].forEach(
-    (k) => (o[k] = +o[k] || 0),
-  );
+  nums(o);
   if (!o.date) return toast("Please pick a date");
-  if (ui.edit === "new")
-    S.L.push({ id: uid(), status: done ? "done" : "up", ...o });
-  else {
-    const x = S.L.find((y) => y.id == ui.edit);
-    Object.assign(x, o);
-    if (done) x.status = "done";
-  }
+  const x =
+    ui.edit === "new"
+      ? { id: uid(), status: "up" }
+      : S.L.find((y) => y.id == ui.edit);
+  Object.assign(x, o);
+  if (x.miles > 0 && x.date <= today) x.status = "done";
+  if (ui.edit === "new") S.L.push(x);
   ui.edit = null;
   ui.del = 0;
   save();
   render();
+  toast(st(x) === "done" ? "Saved as done ✔" : "Saved ✔");
+}
+// The short Finish form: store the 4 trip numbers and mark the load done.
+function finish() {
+  const o = rd(document.querySelector(".sheet")),
+    x = S.L.find((y) => y.id == ui.fin);
+  nums(o);
+  Object.assign(x, o);
+  x.status = "done";
+  ui.fin = null;
+  save();
+  render();
   // A load only counts as finished once it has miles (see st() in STEP 4).
-  toast(
-    !done ? "Saved ✔" : o.miles > 0 ? "Saved as done ✔" : "Saved — add the miles to finish it",
-  );
+  toast(x.miles > 0 ? "Load finished ✔" : "Saved — add the miles to finish it");
 }
 const dOk = (d) => (/^\d{4}-\d\d-\d\d$/.test(d || "") ? d : today),
   tOk = (t) =>
@@ -556,10 +598,19 @@ const A = {
   },
   tab(id) {
     ui.tab = id;
+    ui.clr = 0;
     render();
   },
   per(id) {
     ui.per = id;
+    render();
+  },
+  det() {
+    ui.det = !ui.det;
+    render();
+  },
+  add() {
+    ui.menu = 1;
     render();
   },
   rv(id) {
@@ -573,6 +624,7 @@ const A = {
     render();
   },
   new() {
+    ui.menu = 0;
     ui.edit = "new";
     render();
   },
@@ -582,11 +634,12 @@ const A = {
     render();
   },
   fin(id) {
-    ui.edit = id;
+    ui.fin = id;
     ui.focus = "miles";
     render();
   },
   newx() {
+    ui.menu = 0;
     ui.ex = "new";
     render();
   },
@@ -596,15 +649,15 @@ const A = {
     render();
   },
   close() {
-    ui.edit = ui.ex = ui.rev = null;
-    ui.del = 0;
+    ui.edit = ui.ex = ui.rev = ui.fin = null;
+    ui.menu = ui.del = 0;
     render();
   },
   saveit() {
-    commit(false);
+    commit();
   },
-  done() {
-    commit(true);
+  savefin() {
+    finish();
   },
   savex() {
     const o = rd(document.querySelector(".sheet"));
@@ -646,6 +699,8 @@ const A = {
     toast("Deleted");
   },
   scan() {
+    ui.menu = 0;
+    render();
     $("#scanIn").click();
   },
   stop() {
@@ -674,10 +729,9 @@ const A = {
     toast("Added ✔ — check the Needs Info items");
   },
   clear() {
-    if (ui.clr !== 1) {
+    if (!ui.clr) {
       ui.clr = 1;
-      event.target.textContent = "Tap again to delete everything";
-      return;
+      return render();
     }
     S = { L: [], E: [] };
     ui.clr = 0;
@@ -754,6 +808,14 @@ document.addEventListener("click", (e) => {
   const b = e.target.closest("[data-a]");
   if (!b || !A[b.dataset.a]) return;
   A[b.dataset.a](b.dataset.id);
+});
+// Big cards are not real buttons (they hold the Finish button), so let the
+// Enter or Space key open them too, for keyboard users.
+document.addEventListener("keydown", (e) => {
+  if ((e.key === "Enter" || e.key === " ") && e.target.matches("div[data-a]")) {
+    e.preventDefault();
+    e.target.click();
+  }
 });
 $("#scanIn").addEventListener("change", (e) => {
   const fl = e.target.files[0];

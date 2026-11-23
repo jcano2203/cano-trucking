@@ -21,5 +21,5 @@ https://jcano2203.github.io/cano-trucking/
 
 ## Notes
 - Records are saved in your browser (localStorage) on THIS device only.
-- The "Scan a document" button is hidden here; it needs a small server that holds an API key (see the manual).
+- The "Scan a document" choice in the ＋ Add menu is hidden here; it needs a small server that holds an API key (see the manual).
 - Sample data is fake. Use "Delete sample data & start fresh" in Office > Records.
